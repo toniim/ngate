@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ngate</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#f8fafc;--surface:#ffffff;--surface2:#f1f5f9;--border:#e2e8f0;
+  --text:#1e293b;--text2:#64748b;--accent:#0891b2;--accent2:#0e7490;
+  --green:#059669;--red:#dc2626;--yellow:#d97706;--purple:#7c3aed;
+  --radius:10px;
+}
+body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:115%}
+a{color:var(--accent);text-decoration:none;transition:color .2s ease}
+a:hover{color:var(--accent2)}
+
+.app{max-width:1200px;margin:0 auto;padding:24px}
+
+/* Header */
+.header{display:flex;align-items:center;justify-content:space-between;padding:20px 0;margin-bottom:24px;border-bottom:1px solid var(--border)}
+.header h1{font-size:20px;font-weight:700;display:flex;align-items:center;gap:10px}
+.header h1 .icon{width:32px;height:32px;background:linear-gradient(135deg,var(--accent),var(--purple));border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px}
+.header-actions{display:flex;gap:10px;align-items:center}
+
+/* Status badge */
+.status-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}
+.status-dot.ok{background:var(--green)}
+.status-dot.error{background:var(--red)}
+.nginx-status{font-size:15px;color:var(--text2);display:flex;align-items:center;padding:6px 14px;background:var(--surface);border-radius:20px;border:1px solid var(--border)}
+
+/* Buttons */
+.btn{padding:8px 18px;border-radius:var(--radius);border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;font-size:15px;font-weight:600;font-family:inherit;transition:all .25s ease}
+.btn:hover{background:#e2e8f0;border-color:var(--accent);transform:translateY(-1px);box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.btn:active{transform:translateY(0);box-shadow:none}
+.btn-primary{background:linear-gradient(135deg,var(--accent2),var(--accent));color:#fff;border:none}
+.btn-primary:hover{background:linear-gradient(135deg,#0e7490,#06b6d4);box-shadow:0 4px 12px rgba(8,145,178,.3)}
+.btn-danger{border-color:var(--red);color:var(--red)}
+.btn-danger:hover{background:#fef2f2;border-color:#dc2626}
+.btn-sm{padding:5px 12px;font-size:12px}
+.btn-icon{width:32px;height:32px;padding:0;display:flex;align-items:center;justify-content:center;font-size:16px}
+
+/* Tabs */
+.tabs{display:flex;gap:4px;margin-bottom:20px}
+.tab{padding:8px 18px;border-radius:var(--radius);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;font-size:15px;font-weight:600;font-family:inherit;transition:all .25s ease}
+.tab:hover{color:var(--accent);background:#e2e8f0;border-color:var(--accent)}
+.tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+
+/* Cards */
+.sites-grid{display:flex;flex-direction:column;gap:12px}
+.site-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;transition:all .25s ease}
+.site-card:hover{border-color:var(--accent);background:#f0fdfa;box-shadow:0 2px 12px rgba(8,145,178,.08)}
+.site-card.disabled{opacity:.5}
+.site-row{display:flex;align-items:center;gap:16px}
+.site-info{flex:1;min-width:0}
+.site-domain{font-weight:700;font-size:15px;font-family:'JetBrains Mono',monospace;display:flex;align-items:center;gap:8px}
+.site-meta{display:flex;gap:16px;margin-top:6px;font-size:12px;color:var(--text2)}
+.site-meta span{display:flex;align-items:center;gap:4px}
+.site-actions{display:flex;gap:6px}
+
+/* Tags */
+.tag{padding:3px 10px;border-radius:6px;font-size:11px;font-weight:600;font-family:'JetBrains Mono',monospace}
+.tag-proxy{background:rgba(34,211,238,.12);color:var(--accent)}
+.tag-static{background:rgba(167,139,250,.12);color:var(--purple)}
+.tag-ssl{background:rgba(52,211,153,.12);color:var(--green)}
+.tag-ssl.pending{background:rgba(251,191,36,.12);color:var(--yellow)}
+.tag-ssl.issuing{background:rgba(251,191,36,.12);color:var(--yellow)}
+.tag-ssl.error{background:rgba(248,113,113,.12);color:var(--red)}
+.tag-ssl.none{background:rgba(148,163,184,.1);color:var(--text2)}
+.tag-provider{background:rgba(167,139,250,.08);color:var(--purple)}
+
+/* Modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:100;opacity:0;pointer-events:none;transition:opacity .3s ease}
+.modal-overlay.active{opacity:1;pointer-events:all}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:14px;width:560px;max-width:95vw;max-height:90vh;overflow-y:auto;padding:28px}
+.modal h2{font-size:18px;margin-bottom:20px;font-weight:700}
+
+/* Form */
+.form-group{margin-bottom:16px}
+.form-group label{display:block;font-size:15px;font-weight:600;color:var(--text2);margin-bottom:6px}
+.form-group input,.form-group select,.form-group textarea{width:100%;padding:10px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:14px;outline:none;transition:all .25s ease}
+.form-group input:focus,.form-group select:focus,.form-group textarea:focus{border-color:var(--accent)}
+.form-group textarea{resize:vertical;min-height:60px}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.form-check{display:flex;align-items:center;gap:8px;cursor:pointer}
+.form-check input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent)}
+.form-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:24px;padding-top:16px;border-top:1px solid var(--border)}
+.hint{font-size:13px;color:var(--text2);margin-top:4px}
+
+/* Empty */
+.empty{text-align:center;padding:60px 20px;color:var(--text2)}
+.empty .icon{font-size:48px;margin-bottom:16px;opacity:.5}
+.empty p{margin-bottom:16px}
+
+/* Toast */
+.toast{position:fixed;bottom:24px;right:24px;padding:12px 20px;border-radius:var(--radius);font-size:13px;font-weight:500;z-index:200;transform:translateY(100px);opacity:0;transition:all .3s}
+.toast.show{transform:translateY(0);opacity:1}
+.toast.success{background:var(--green);color:#fff}
+.toast.error{background:var(--red);color:#fff}
+
+/* Trust Modal */
+.trust-info{background:var(--surface2);border-radius:8px;padding:16px;margin:12px 0;font-family:'JetBrains Mono',monospace;font-size:14px;line-height:1.8;overflow-x:auto}
+.trust-info .os-label{color:var(--accent);font-weight:600}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <!-- Header -->
+  <div class="header">
+    <h1><span class="icon">⚡</span> Ngate</h1>
+    <div class="header-actions">
+      <div class="nginx-status" id="nginx-status">
+        <span class="status-dot" id="status-dot"></span>
+        <span id="status-text">Checking...</span>
+      </div>
+      <button class="btn" onclick="reloadNginx()" title="Reload Nginx">🔄 Reload</button>
+      <button class="btn" onclick="showTrustInfo()" title="mkcert Trust Info">🔐 Trust CA</button>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('sites')" id="tab-sites">Sites</button>
+    <button class="tab" onclick="switchTab('certs')" id="tab-certs">Certificates</button>
+    <button class="tab" onclick="switchTab('providers')" id="tab-providers">Cert Providers</button>
+  </div>
+
+  <!-- Sites Tab -->
+  <div id="panel-sites">
+    <div style="display:flex;justify-content:flex-end;margin-bottom:16px">
+      <button class="btn btn-primary" onclick="openSiteModal()">+ Add Site</button>
+    </div>
+    <div class="sites-grid" id="sites-list"></div>
+  </div>
+
+  <!-- Certificates Tab -->
+  <div id="panel-certs" style="display:none">
+    <div style="display:flex;justify-content:flex-end;margin-bottom:16px">
+      <button class="btn btn-primary" onclick="openCertModal()">+ Issue Certificate</button>
+    </div>
+    <div class="sites-grid" id="certs-list"></div>
+  </div>
+
+  <!-- Providers Tab -->
+  <div id="panel-providers" style="display:none">
+    <div style="display:flex;justify-content:flex-end;margin-bottom:16px">
+      <button class="btn btn-primary" onclick="openProviderModal()">+ Add Provider</button>
+    </div>
+    <div class="sites-grid" id="providers-list"></div>
+  </div>
+</div>
+
+<!-- Site Modal -->
+<div class="modal-overlay" id="site-overlay" onclick="closeSiteModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h2 id="site-modal-title">Add New Site</h2>
+    <form id="site-form" onsubmit="saveSite(event)">
+      <input type="hidden" id="f-id">
+      <div class="form-group">
+        <label>Domain</label>
+        <input type="text" id="f-domain" placeholder="app.example.com" required>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Type</label>
+          <select id="f-proxy-type" onchange="toggleTypeFields()">
+            <option value="reverse_proxy">Reverse Proxy</option>
+            <option value="static">Static Files</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Certificate</label>
+          <select id="f-cert-id">
+            <option value="">None (HTTP only)</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group" id="fg-proxy-target">
+        <label>Proxy Target</label>
+        <input type="text" id="f-proxy-target" placeholder="http://localhost:3000">
+        <div class="hint">Backend URL to proxy requests to</div>
+      </div>
+      <div class="form-group" id="fg-static-root" style="display:none">
+        <label>Static Root</label>
+        <input type="text" id="f-static-root" placeholder="/var/www/mysite">
+        <div class="hint">Filesystem path to serve static files from</div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-check">
+            <input type="checkbox" id="f-force-https">
+            Force HTTPS redirect
+          </label>
+        </div>
+        <div class="form-group">
+          <label class="form-check">
+            <input type="checkbox" id="f-enabled" checked>
+            Enabled
+          </label>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Custom Nginx Directives (optional)</label>
+        <textarea id="f-custom-nginx" placeholder="client_max_body_size 100m;"></textarea>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn" onclick="closeSiteModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Site</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Provider Modal -->
+<div class="modal-overlay" id="provider-overlay" onclick="closeProviderModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h2 id="provider-modal-title">Add Cert Provider</h2>
+    <form id="provider-form" onsubmit="saveProvider(event)">
+      <input type="hidden" id="fp-id">
+      <div class="form-group">
+        <label>Name</label>
+        <input type="text" id="fp-name" placeholder="My LE Production" required>
+      </div>
+      <div class="form-group">
+        <label>Provider Type</label>
+        <select id="fp-type" onchange="toggleProviderConfig()">
+          <option value="mkcert">mkcert (Local Dev)</option>
+          <option value="letsencrypt_http01">Let's Encrypt HTTP-01</option>
+          <option value="letsencrypt_dns01_route53">Let's Encrypt DNS-01 (Route53)</option>
+          <option value="letsencrypt_dns01_cloudflare">Let's Encrypt DNS-01 (Cloudflare)</option>
+        </select>
+      </div>
+      <div class="form-group" id="fg-provider-config" style="display:none">
+        <label>Configuration (YAML)</label>
+        <textarea id="fp-config" rows="8" placeholder="" style="white-space:pre;tab-size:2"></textarea>
+        <div class="hint" id="fp-config-hint"></div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn" onclick="closeProviderModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Provider</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Certificate Modal -->
+<div class="modal-overlay" id="cert-overlay" onclick="closeCertModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h2>Issue Certificate</h2>
+    <form id="cert-form" onsubmit="issueCert(event)">
+      <div class="form-group">
+        <label>Domain</label>
+        <input type="text" id="fc-domain" placeholder="example.com" required>
+      </div>
+      <div class="form-group">
+        <label>Alt Domains (SANs)</label>
+        <input type="text" id="fc-alt-domains" placeholder="*.example.com, api.example.com, staging.example.com">
+        <p class="hint">Comma-separated. Use *.domain for wildcard. Wildcard requires DNS-01 provider.</p>
+      </div>
+      <div class="form-group">
+        <label>Cert Provider</label>
+        <select id="fc-provider-id" required></select>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn" onclick="closeCertModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Issue</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Trust CA Modal -->
+<div class="modal-overlay" id="trust-overlay" onclick="closeTrustModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h2>🔐 Trust mkcert Root CA</h2>
+    <p style="color:var(--text2);font-size:15px;margin-bottom:16px">
+      Download the root CA certificate, then install it on your device:
+    </p>
+    <div style="margin-bottom:16px">
+      <a href="/api/mkcert/rootca.pem" download class="btn btn-primary" style="display:inline-flex;align-items:center;gap:8px;text-decoration:none">
+        ⬇ Download rootCA.pem
+      </a>
+    </div>
+    <div class="trust-info" id="trust-commands">
+      <div><span class="os-label">macOS:</span></div>
+      <div>sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain rootCA.pem</div>
+      <br>
+      <div><span class="os-label">Windows (Admin PowerShell):</span></div>
+      <div>certutil -addstore -f "ROOT" rootCA.pem</div>
+      <br>
+      <div><span class="os-label">Linux:</span></div>
+      <div>sudo cp rootCA.pem /usr/local/share/ca-certificates/mkcert-ca.crt && sudo update-ca-certificates</div>
+      <br>
+      <div><span class="os-label">iOS:</span></div>
+      <div>Download rootCA.pem → Settings → Profile Downloaded → Install → Settings → General → About → Certificate Trust Settings → Enable</div>
+      <br>
+      <div><span class="os-label">Android:</span></div>
+      <div>Download rootCA.pem → Settings → Security → Install from storage → CA certificate</div>
+    </div>
+    <div class="form-actions">
+      <button class="btn" onclick="closeTrustModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+const API = '/api';
+
+// --- State ---
+let sites = [];
+let certProviders = [];
+let certificates = [];
+let editingSiteId = null;
+let editingProviderId = null;
+
+// --- Init ---
+document.addEventListener('DOMContentLoaded', () => {
+  loadAll();
+  checkNginxStatus();
+  setInterval(checkNginxStatus, 30000);
+});
+
+async function loadAll() {
+  await Promise.all([loadSites(), loadProviders(), loadCertificates()]);
+}
+
+// --- API ---
+async function apiFetch(path, opts = {}) {
+  const res = await fetch(API + path, {
+    headers: { 'Content-Type': 'application/json' },
+    ...opts,
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Request failed');
+  return data;
+}
+
+// --- Tabs ---
+function switchTab(tab) {
+  ['sites','certs','providers'].forEach(t => {
+    document.getElementById('panel-' + t).style.display = t === tab ? '' : 'none';
+    document.getElementById('tab-' + t).classList.toggle('active', t === tab);
+  });
+}
+
+// --- Sites ---
+async function loadSites() {
+  try {
+    sites = await apiFetch('/sites');
+    renderSites();
+  } catch (e) { toast('Failed to load sites: ' + e.message, 'error'); }
+}
+
+function renderSites() {
+  const el = document.getElementById('sites-list');
+  if (!sites.length) {
+    el.innerHTML = '<div class="empty"><div class="icon">📡</div><p>No sites configured yet</p><button class="btn btn-primary" onclick="openSiteModal()">Add Your First Site</button></div>';
+    return;
+  }
+  el.innerHTML = sites.map(s => {
+    const typeTag = s.proxy_type === 'static'
+      ? '<span class="tag tag-static">STATIC</span>'
+      : '<span class="tag tag-proxy">PROXY</span>';
+
+    let sslTag = '<span class="tag tag-ssl none">HTTP</span>';
+    if (s.certificate_id) {
+      const cert = certificates.find(c => c.id === s.certificate_id);
+      if (cert) {
+        const cls = cert.status === 'active' ? '' : cert.status === 'error' ? ' error' : ' ' + cert.status;
+        sslTag = `<span class="tag tag-ssl${cls}">${escHtml(cert.domain)} ${cert.status}</span>`;
+      }
+    }
+
+    const target = s.proxy_type === 'static' ? s.static_root : s.proxy_target;
+    const proto = s.certificate_id ? 'https' : 'http';
+
+    return `
+      <div class="site-card ${s.enabled ? '' : 'disabled'}">
+        <div class="site-row">
+          <div class="site-info">
+            <div class="site-domain">
+              <a href="${proto}://${s.domain}" target="_blank">${escHtml(s.domain)}</a>
+              ${typeTag} ${sslTag}
+            </div>
+            <div class="site-meta">
+              <span>→ ${escHtml(target || 'N/A')}</span>
+              ${s.force_https ? '<span>🔒 Force HTTPS</span>' : ''}
+            </div>
+          </div>
+          <div class="site-actions">
+            <button class="btn btn-sm btn-icon" onclick="toggleSite(${s.id})" title="${s.enabled ? 'Disable' : 'Enable'}">
+              ${s.enabled ? '⏸' : '▶️'}
+            </button>
+            <button class="btn btn-sm btn-icon" onclick="editSite(${s.id})" title="Edit">✏️</button>
+            <button class="btn btn-sm btn-icon btn-danger" onclick="deleteSite(${s.id})" title="Delete">🗑</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function openSiteModal(site = null) {
+  editingSiteId = site ? site.id : null;
+  document.getElementById('site-modal-title').textContent = site ? 'Edit Site' : 'Add New Site';
+  document.getElementById('f-id').value = site?.id || '';
+  document.getElementById('f-domain').value = site?.domain || '';
+  document.getElementById('f-proxy-type').value = site?.proxy_type || 'reverse_proxy';
+  document.getElementById('f-proxy-target').value = site?.proxy_target || '';
+  document.getElementById('f-static-root').value = site?.static_root || '';
+  document.getElementById('f-force-https').checked = site?.force_https || false;
+  document.getElementById('f-enabled').checked = site?.enabled !== false;
+  document.getElementById('f-custom-nginx').value = site?.custom_nginx || '';
+
+  // Populate cert dropdown
+  const sel = document.getElementById('f-cert-id');
+  sel.innerHTML = '<option value="">None (HTTP only)</option>';
+  certificates.forEach(c => {
+    const label = `${c.domain} (${c.provider_type || 'unknown'}) [${c.status}]`;
+    sel.innerHTML += `<option value="${c.id}">${escHtml(label)}</option>`;
+  });
+  sel.value = site?.certificate_id || '';
+
+  toggleTypeFields();
+  document.getElementById('site-overlay').classList.add('active');
+}
+
+function closeSiteModal(e) {
+  if (e && e.target !== e.currentTarget) return;
+  document.getElementById('site-overlay').classList.remove('active');
+  editingSiteId = null;
+}
+
+function toggleTypeFields() {
+  const type = document.getElementById('f-proxy-type').value;
+  document.getElementById('fg-proxy-target').style.display = type === 'reverse_proxy' ? '' : 'none';
+  document.getElementById('fg-static-root').style.display = type === 'static' ? '' : 'none';
+}
+
+async function saveSite(e) {
+  e.preventDefault();
+  const certVal = document.getElementById('f-cert-id').value;
+  const payload = {
+    domain: document.getElementById('f-domain').value.trim(),
+    proxy_type: document.getElementById('f-proxy-type').value,
+    proxy_target: document.getElementById('f-proxy-target').value.trim(),
+    static_root: document.getElementById('f-static-root').value.trim(),
+    certificate_id: certVal ? parseInt(certVal) : null,
+    force_https: document.getElementById('f-force-https').checked,
+    enabled: document.getElementById('f-enabled').checked,
+    custom_nginx: document.getElementById('f-custom-nginx').value,
+  };
+  try {
+    if (editingSiteId) {
+      await apiFetch(`/sites/${editingSiteId}`, { method: 'PUT', body: JSON.stringify(payload) });
+      toast('Site updated');
+    } else {
+      await apiFetch('/sites', { method: 'POST', body: JSON.stringify(payload) });
+      toast('Site created');
+    }
+    closeSiteModal();
+    loadSites();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function editSite(id) {
+  const site = sites.find(s => s.id === id);
+  if (site) openSiteModal(site);
+}
+
+async function deleteSite(id) {
+  const site = sites.find(s => s.id === id);
+  if (!confirm(`Delete ${site?.domain}?`)) return;
+  try {
+    await apiFetch(`/sites/${id}`, { method: 'DELETE' });
+    toast('Site deleted');
+    loadSites();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function toggleSite(id) {
+  try {
+    await apiFetch(`/sites/${id}/enable`, { method: 'POST' });
+    loadSites();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// --- Cert Providers ---
+async function loadProviders() {
+  try {
+    certProviders = await apiFetch('/cert-providers');
+    renderProviders();
+  } catch (e) { toast('Failed to load providers: ' + e.message, 'error'); }
+}
+
+function renderProviders() {
+  const el = document.getElementById('providers-list');
+  if (!certProviders.length) {
+    el.innerHTML = '<div class="empty"><div class="icon">🔧</div><p>No cert providers configured</p><button class="btn btn-primary" onclick="openProviderModal()">Add Provider</button></div>';
+    return;
+  }
+  el.innerHTML = certProviders.map(p => `
+    <div class="site-card">
+      <div class="site-row">
+        <div class="site-info">
+          <div class="site-domain">
+            ${escHtml(p.name)}
+            <span class="tag tag-provider">${escHtml(p.type)}</span>
+          </div>
+          <div class="site-meta">
+            <span>Config: ${p.config === '{}' ? 'default' : p.config}</span>
+          </div>
+        </div>
+        <div class="site-actions">
+          <button class="btn btn-sm btn-icon" onclick="editProvider(${p.id})" title="Edit">✏️</button>
+          <button class="btn btn-sm btn-icon btn-danger" onclick="deleteProvider(${p.id})" title="Delete">🗑</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+const configPlaceholders = {
+  mkcert: '',
+  letsencrypt_http01: 'email: admin@example.com\nstaging: false',
+  letsencrypt_dns01_route53: 'email: admin@example.com\naccess_key_id: AKIA...\nsecret_access_key: your-secret-key\nregion: us-east-1\nhosted_zone_id: Z0123456789  # optional\nstaging: false',
+  letsencrypt_dns01_cloudflare: 'email: admin@example.com\napi_token: your-cf-api-token\nstaging: false',
+};
+
+const configInstructions = {
+  mkcert: '',
+  letsencrypt_http01: 'Email for Let\'s Encrypt notifications. Set staging: true to test without rate limits.',
+  letsencrypt_dns01_route53: 'Get credentials from AWS IAM → Users → Security credentials → Access keys. Needs Route53 FullAccess permission.',
+  letsencrypt_dns01_cloudflare: 'Get API token from Cloudflare dashboard → Profile → API Tokens → Create Token → "Edit zone DNS" template.',
+};
+
+function toggleProviderConfig() {
+  const type = document.getElementById('fp-type').value;
+  const show = type !== 'mkcert';
+  document.getElementById('fg-provider-config').style.display = show ? '' : 'none';
+  if (show) {
+    document.getElementById('fp-config').placeholder = configPlaceholders[type] || '';
+    document.getElementById('fp-config-hint').textContent = configInstructions[type] || '';
+  }
+}
+
+function openProviderModal(provider = null) {
+  editingProviderId = provider ? provider.id : null;
+  document.getElementById('provider-modal-title').textContent = provider ? 'Edit Provider' : 'Add Cert Provider';
+  document.getElementById('fp-id').value = provider?.id || '';
+  document.getElementById('fp-name').value = provider?.name || '';
+  document.getElementById('fp-type').value = provider?.type || 'mkcert';
+  document.getElementById('fp-config').value = '';
+  toggleProviderConfig();
+  document.getElementById('provider-overlay').classList.add('active');
+}
+
+function closeProviderModal(e) {
+  if (e && e.target !== e.currentTarget) return;
+  document.getElementById('provider-overlay').classList.remove('active');
+  editingProviderId = null;
+}
+
+async function saveProvider(e) {
+  e.preventDefault();
+  const type = document.getElementById('fp-type').value;
+  const payload = {
+    name: document.getElementById('fp-name').value.trim(),
+    type: type,
+    config: type === 'mkcert' ? '{}' : (document.getElementById('fp-config').value.trim() || '{}'),
+  };
+  try {
+    if (editingProviderId) {
+      await apiFetch(`/cert-providers/${editingProviderId}`, { method: 'PUT', body: JSON.stringify(payload) });
+      toast('Provider updated');
+    } else {
+      await apiFetch('/cert-providers', { method: 'POST', body: JSON.stringify(payload) });
+      toast('Provider created');
+    }
+    closeProviderModal();
+    loadProviders();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function editProvider(id) {
+  const p = certProviders.find(x => x.id === id);
+  if (p) openProviderModal(p);
+}
+
+async function deleteProvider(id) {
+  if (!confirm('Delete this provider?')) return;
+  try {
+    await apiFetch(`/cert-providers/${id}`, { method: 'DELETE' });
+    toast('Provider deleted');
+    loadProviders();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// --- Certificates ---
+async function loadCertificates() {
+  try {
+    certificates = await apiFetch('/certificates');
+    renderCerts();
+  } catch (e) { toast('Failed to load certificates: ' + e.message, 'error'); }
+}
+
+function renderCerts() {
+  const el = document.getElementById('certs-list');
+  if (!certificates.length) {
+    el.innerHTML = '<div class="empty"><div class="icon">📜</div><p>No certificates issued yet</p><button class="btn btn-primary" onclick="openCertModal()">Issue Certificate</button></div>';
+    return;
+  }
+  el.innerHTML = certificates.map(c => {
+    const cls = c.status === 'active' ? '' : c.status === 'error' ? ' error' : ' ' + c.status;
+    const providerName = certProviders.find(p => p.id === c.cert_provider_id)?.name || 'Unknown';
+    return `
+      <div class="site-card">
+        <div class="site-row">
+          <div class="site-info">
+            <div class="site-domain">
+              ${escHtml(c.domain)}
+              <span class="tag tag-ssl${cls}">${c.status}</span>
+              <span class="tag tag-provider">${escHtml(providerName)}</span>
+            </div>
+            <div class="site-meta">
+              ${c.alt_domains ? `<span>SANs: ${escHtml(c.alt_domains)}</span>` : ''}
+              ${c.expires_at ? `<span>📅 Expires: ${new Date(c.expires_at).toLocaleDateString()}</span>` : ''}
+              ${c.error_message ? `<span style="color:var(--red)">⚠ ${escHtml(c.error_message)}</span>` : ''}
+            </div>
+          </div>
+          <div class="site-actions">
+            <button class="btn btn-sm btn-icon" onclick="renewCert(${c.id})" title="Renew">🔄</button>
+            <button class="btn btn-sm btn-icon btn-danger" onclick="deleteCert(${c.id})" title="Delete">🗑</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function openCertModal() {
+  const sel = document.getElementById('fc-provider-id');
+  sel.innerHTML = '';
+  certProviders.forEach(p => {
+    sel.innerHTML += `<option value="${p.id}">${escHtml(p.name)} (${p.type})</option>`;
+  });
+  if (!certProviders.length) {
+    sel.innerHTML = '<option value="">-- Create a provider first --</option>';
+  }
+  document.getElementById('fc-domain').value = '';
+  document.getElementById('fc-alt-domains').value = '';
+  document.getElementById('cert-overlay').classList.add('active');
+}
+
+function closeCertModal(e) {
+  if (e && e.target !== e.currentTarget) return;
+  document.getElementById('cert-overlay').classList.remove('active');
+}
+
+async function issueCert(e) {
+  e.preventDefault();
+  const altRaw = document.getElementById('fc-alt-domains').value.trim();
+  const altDomains = altRaw ? altRaw.split(',').map(d => d.trim()).filter(Boolean).join(',') : '';
+  const payload = {
+    domain: document.getElementById('fc-domain').value.trim(),
+    alt_domains: altDomains,
+    cert_provider_id: parseInt(document.getElementById('fc-provider-id').value),
+  };
+  if (!payload.cert_provider_id) { toast('Select a provider first', 'error'); return; }
+  try {
+    await apiFetch('/certificates', { method: 'POST', body: JSON.stringify(payload) });
+    toast('Certificate issuance started...');
+    closeCertModal();
+    setTimeout(loadCertificates, 2000);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function renewCert(id) {
+  try {
+    await apiFetch(`/certificates/${id}/renew`, { method: 'POST' });
+    toast('Renewal started...');
+    setTimeout(loadCertificates, 2000);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function deleteCert(id) {
+  if (!confirm('Delete this certificate record?')) return;
+  try {
+    await apiFetch(`/certificates/${id}`, { method: 'DELETE' });
+    toast('Certificate deleted');
+    loadCertificates();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// --- Nginx ---
+async function checkNginxStatus() {
+  try {
+    const data = await apiFetch('/nginx/status');
+    document.getElementById('status-dot').className = 'status-dot ' + data.status;
+    document.getElementById('status-text').textContent = data.status === 'ok' ? 'Nginx OK' : 'Config Error';
+  } catch {
+    document.getElementById('status-dot').className = 'status-dot error';
+    document.getElementById('status-text').textContent = 'Unreachable';
+  }
+}
+
+async function reloadNginx() {
+  try {
+    await apiFetch('/nginx/reload', { method: 'POST' });
+    toast('Nginx reloaded');
+    checkNginxStatus();
+  } catch (e) { toast('Reload failed: ' + e.message, 'error'); }
+}
+
+// --- Trust Modal ---
+function showTrustInfo() { document.getElementById('trust-overlay').classList.add('active'); }
+function closeTrustModal(e) {
+  if (e && e.target !== e.currentTarget) return;
+  document.getElementById('trust-overlay').classList.remove('active');
+}
+
+async function fetchTrustInfo() {
+  try {
+    const data = await apiFetch('/mkcert/caroot');
+    document.getElementById('trust-commands').innerHTML = `
+      <div><span class="os-label">CA Root Path:</span> ${data.caroot}</div><br>
+      <div><span class="os-label">macOS:</span></div><div>${data.trust_macos}</div><br>
+      <div><span class="os-label">Windows (Admin):</span></div><div>${data.trust_windows}</div><br>
+      <div><span class="os-label">Linux:</span></div><div>${data.trust_linux}</div>
+    `;
+  } catch (e) { toast('Could not detect mkcert CA: ' + e.message, 'error'); }
+}
+
+// --- Helpers ---
+function escHtml(str) {
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+function toast(msg, type = 'success') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast ' + type + ' show';
+  setTimeout(() => el.classList.remove('show'), 3000);
+}
+</script>
+</body>
+</html>

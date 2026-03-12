@@ -1,0 +1,14 @@
+services:
+  proxy-manager:
+    build: .
+    container_name: ngate
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8090:8080"    # Admin UI (host:container)
+    volumes:
+      - ./data/ngate:/etc/ngate
+      - ./data/acme:/var/www/acme
+    environment:
+      - TZ=Asia/Ho_Chi_Minh
