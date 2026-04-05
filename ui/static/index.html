@@ -89,6 +89,19 @@ a:hover{color:var(--accent2)}
 .form-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:24px;padding-top:16px;border-top:1px solid var(--border)}
 .hint{font-size:13px;color:var(--text2);margin-top:4px}
 
+/* YAML editor overlay */
+.yaml-editor{position:relative}
+.yaml-editor textarea,.yaml-editor pre{font-family:'JetBrains Mono',monospace;font-size:14px;line-height:1.6;padding:10px 14px;border-radius:8px;white-space:pre;tab-size:2;overflow:auto;width:100%;margin:0}
+.yaml-editor textarea{position:relative;z-index:2;background:transparent;color:transparent;caret-color:var(--text);border:1px solid var(--border);resize:vertical;min-height:60px;outline:none}
+.yaml-editor textarea:focus{border-color:var(--accent)}
+.yaml-editor textarea::selection{background:rgba(8,145,178,.2);color:transparent}
+.yaml-editor pre{position:absolute;inset:0;z-index:1;background:var(--surface2);border:1px solid transparent;pointer-events:none;overflow:hidden}
+.yaml-editor .yk{color:var(--accent2);font-weight:600}
+.yaml-editor .yv{color:var(--text)}
+.yaml-editor .ys{color:var(--green)}
+.yaml-editor .yc{color:var(--text2);font-style:italic}
+.yaml-editor .yb{color:var(--purple);font-weight:600}
+
 /* Empty */
 .empty{text-align:center;padding:60px 20px;color:var(--text2)}
 .empty .icon{font-size:48px;margin-bottom:16px;opacity:.5}
@@ -234,7 +247,11 @@ a:hover{color:var(--accent2)}
       </div>
       <div class="form-group" id="fg-provider-config" style="display:none">
         <label>Configuration (YAML)</label>
-        <textarea id="fp-config" rows="8" placeholder="" style="white-space:pre;tab-size:2"></textarea>
+        <div class="yaml-editor">
+          <pre class="yaml-highlight" id="fp-config-highlight" aria-hidden="true"></pre>
+          <textarea id="fp-config" rows="8" placeholder="" spellcheck="false"
+            oninput="highlightYaml()" onscroll="syncScroll()"></textarea>
+        </div>
         <div class="hint" id="fp-config-hint"></div>
       </div>
       <div class="form-actions">
@@ -535,11 +552,11 @@ function renderProviders() {
   `).join('');
 }
 
-const configPlaceholders = {
+const configTemplates = {
   mkcert: '',
-  letsencrypt_http01: 'email: admin@example.com\nstaging: false',
-  letsencrypt_dns01_route53: 'email: admin@example.com\naccess_key_id: AKIA...\nsecret_access_key: your-secret-key\nregion: us-east-1\nhosted_zone_id: Z0123456789  # optional\nstaging: false',
-  letsencrypt_dns01_cloudflare: 'email: admin@example.com\napi_token: your-cf-api-token\nstaging: false',
+  letsencrypt_http01: 'email: \nstaging: false',
+  letsencrypt_dns01_route53: 'email: \naccess_key_id: \nsecret_access_key: \nregion: us-east-1\nhosted_zone_id: \nstaging: false',
+  letsencrypt_dns01_cloudflare: 'email: \napi_token: \nstaging: false',
 };
 
 const configInstructions = {
@@ -549,13 +566,22 @@ const configInstructions = {
   letsencrypt_dns01_cloudflare: 'Get API token from Cloudflare dashboard → Profile → API Tokens → Create Token → "Edit zone DNS" template.',
 };
 
+function isTemplateOrEmpty(val) {
+  if (!val.trim()) return true;
+  return Object.values(configTemplates).some(t => t && val.trim() === t.trim());
+}
+
 function toggleProviderConfig() {
   const type = document.getElementById('fp-type').value;
   const show = type !== 'mkcert';
+  const configEl = document.getElementById('fp-config');
   document.getElementById('fg-provider-config').style.display = show ? '' : 'none';
   if (show) {
-    document.getElementById('fp-config').placeholder = configPlaceholders[type] || '';
+    if (isTemplateOrEmpty(configEl.value)) {
+      configEl.value = configTemplates[type] || '';
+    }
     document.getElementById('fp-config-hint').textContent = configInstructions[type] || '';
+    highlightYaml();
   }
 }
 
@@ -564,9 +590,11 @@ function openProviderModal(provider = null) {
   document.getElementById('provider-modal-title').textContent = provider ? 'Edit Provider' : 'Add Cert Provider';
   document.getElementById('fp-id').value = provider?.id || '';
   document.getElementById('fp-name').value = provider?.name || '';
-  document.getElementById('fp-type').value = provider?.type || 'mkcert';
-  document.getElementById('fp-config').value = '';
+  const type = provider?.type || 'mkcert';
+  document.getElementById('fp-type').value = type;
+  document.getElementById('fp-config').value = provider ? '' : (configTemplates[type] || '');
   toggleProviderConfig();
+  highlightYaml();
   document.getElementById('provider-overlay').classList.add('active');
 }
 
@@ -771,6 +799,29 @@ function escHtml(str) {
   const d = document.createElement('div');
   d.textContent = str;
   return d.innerHTML;
+}
+
+function highlightYaml() {
+  const raw = document.getElementById('fp-config').value;
+  const html = raw.split('\n').map(line => {
+    const escaped = escHtml(line);
+    if (/^\s*#/.test(line)) return `<span class="yc">${escaped}</span>`;
+    const m = escaped.match(/^(\s*)([\w.\-]+)(:)(.*)/);
+    if (!m) return escaped;
+    const [, indent, key, colon, val] = m;
+    let valHtml = `<span class="yv">${val}</span>`;
+    if (/^\s*(true|false)\s*$/.test(val)) valHtml = `<span class="yb">${val}</span>`;
+    else if (/^\s*['"]/.test(val)) valHtml = `<span class="ys">${val}</span>`;
+    return `${indent}<span class="yk">${key}</span>${colon}${valHtml}`;
+  }).join('\n') + '\n';
+  document.getElementById('fp-config-highlight').innerHTML = html;
+}
+
+function syncScroll() {
+  const ta = document.getElementById('fp-config');
+  const pre = document.getElementById('fp-config-highlight');
+  pre.scrollTop = ta.scrollTop;
+  pre.scrollLeft = ta.scrollLeft;
 }
 
 function escAttr(str) {
