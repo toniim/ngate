@@ -31,17 +31,16 @@ func (db *DB) Close() error {
 }
 
 func (db *DB) migrate() error {
-	_, err := db.conn.Exec(`
-		CREATE TABLE IF NOT EXISTS cert_providers (
+	migrations := []string{
+		`CREATE TABLE IF NOT EXISTS cert_providers (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL,
 			type TEXT NOT NULL,
 			config TEXT DEFAULT '{}',
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-		);
-
-		CREATE TABLE IF NOT EXISTS certificates (
+		)`,
+		`CREATE TABLE IF NOT EXISTS certificates (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			domain TEXT NOT NULL,
 			cert_provider_id INTEGER NOT NULL REFERENCES cert_providers(id),
@@ -51,9 +50,8 @@ func (db *DB) migrate() error {
 			issued_at DATETIME,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-		);
-
-		CREATE TABLE IF NOT EXISTS sites (
+		)`,
+		`CREATE TABLE IF NOT EXISTS sites (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			domain TEXT NOT NULL UNIQUE,
 			proxy_type TEXT NOT NULL DEFAULT 'reverse_proxy',
@@ -65,13 +63,15 @@ func (db *DB) migrate() error {
 			custom_nginx TEXT DEFAULT '',
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-		);
-	`)
-	if err != nil {
-		return err
+		)`,
+	}
+	for _, m := range migrations {
+		if _, err := db.conn.Exec(m); err != nil {
+			return err
+		}
 	}
 
-	// Add alt_domains column if missing (migration)
+	// Column migrations (ignore errors if already exists)
 	db.conn.Exec(`ALTER TABLE certificates ADD COLUMN alt_domains TEXT DEFAULT ''`)
 
 	return nil

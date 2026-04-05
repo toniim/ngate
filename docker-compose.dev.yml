@@ -1,0 +1,17 @@
+services:
+  proxy-manager:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: ngate-dev
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8090:8080"
+    volumes:
+      - .:/app
+      - ./data/ngate:/etc/ngate
+      - ./data/acme:/var/www/acme
+    environment:
+      - TZ=Asia/Ho_Chi_Minh

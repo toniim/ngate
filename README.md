@@ -47,21 +47,26 @@ docker compose up -d
 open http://localhost:8080
 ```
 
-## Quick Start (Local / Ubuntu)
+## Development
 
 ```bash
-# Prerequisites
-sudo apt install nginx certbot
+# Dev mode with hot reload (Docker + air)
+make dev
 
-# Install mkcert (optional, for local SSL)
-curl -JLO "https://dl.filippo.io/mkcert/latest?for=linux/amd64"
-chmod +x mkcert-v*-linux-amd64
-sudo mv mkcert-v*-linux-amd64 /usr/local/bin/mkcert
-mkcert -install
+# Stop dev container
+make dev-down
+```
 
-# Build & run
-make build
-sudo make run
+Edit any `.go` or `.html` file and air will auto-rebuild inside the container.
+
+## Deploy to VPS
+
+```bash
+# Default host (tonysproxy)
+make deploy
+
+# Custom host
+make deploy HOST=my-vps
 ```
 
 ## API Endpoints

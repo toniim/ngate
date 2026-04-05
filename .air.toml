@@ -1,0 +1,13 @@
+root = "/app"
+tmp_dir = "/tmp/air"
+
+[build]
+  cmd = "CGO_ENABLED=1 go build -o /tmp/air/ngate ./main.go"
+  bin = "/tmp/air/ngate"
+  args_bin = ["-port", "8080", "-data", "/etc/ngate", "-conf", "/etc/nginx/sites-enabled", "-certs", "/etc/ngate/certs"]
+  include_ext = ["go", "html", "tmpl"]
+  exclude_dir = ["bin", "data", "plans", "docs", "node_modules"]
+  delay = 1000
+
+[misc]
+  clean_on_exit = true

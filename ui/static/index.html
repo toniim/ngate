@@ -321,6 +321,7 @@ let editingProviderId = null;
 // --- Init ---
 document.addEventListener('DOMContentLoaded', () => {
   loadAll();
+  restoreTab();
   checkNginxStatus();
   setInterval(checkNginxStatus, 30000);
 });
@@ -341,12 +342,21 @@ async function apiFetch(path, opts = {}) {
 }
 
 // --- Tabs ---
-function switchTab(tab) {
+function switchTab(tab, pushState = true) {
   ['sites','certs','providers'].forEach(t => {
     document.getElementById('panel-' + t).style.display = t === tab ? '' : 'none';
     document.getElementById('tab-' + t).classList.toggle('active', t === tab);
   });
+  if (pushState) history.pushState(null, '', '#' + tab);
 }
+
+function restoreTab() {
+  const hash = location.hash.replace('#', '');
+  if (['sites','certs','providers'].includes(hash)) {
+    switchTab(hash, false);
+  }
+}
+window.addEventListener('popstate', () => restoreTab());
 
 // --- Sites ---
 async function loadSites() {

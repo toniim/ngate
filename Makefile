@@ -1,4 +1,4 @@
-.PHONY: build run docker-build docker-up docker-down dev deploy
+.PHONY: build run docker-build docker-up docker-down dev dev-down deploy
 
 HOST ?= tonysproxy
 
@@ -10,14 +10,12 @@ build:
 run: build
 	sudo ./bin/ngate -port 8080
 
-# Dev mode - run with local paths
-dev: build
-	mkdir -p /tmp/npm-data /tmp/npm-conf /tmp/npm-certs
-	sudo ./bin/ngate \
-		-port 8080 \
-		-data /tmp/npm-data \
-		-conf /tmp/npm-conf \
-		-certs /tmp/npm-certs
+# Dev mode - docker with hot reload via air
+dev:
+	docker compose -f docker-compose.dev.yml up --build
+
+dev-down:
+	docker compose -f docker-compose.dev.yml down
 
 # Docker
 docker-build:
