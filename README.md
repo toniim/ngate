@@ -61,13 +61,110 @@ Edit any `.go` or `.html` file and air will auto-rebuild inside the container.
 
 ## Deploy to VPS
 
+`make deploy` builds the binary locally, rsyncs source to the remote host, and rebuilds the Docker container.
+
 ```bash
-# Default host (tonysproxy)
+# Deploy (default host from Makefile: HOST=tonysproxy)
 make deploy
 
-# Custom host
+# Deploy to a different host
 make deploy HOST=my-vps
 ```
+
+**Host configuration:** `HOST` must be an SSH host defined in `~/.ssh/config`:
+
+```
+Host my-vps
+  Hostname 1.2.3.4
+  User ubuntu
+  IdentityFile ~/.ssh/id_rsa
+```
+
+**What happens on deploy:**
+1. `go build` runs locally (fast, avoids network issues in Docker)
+2. `rsync` syncs source to `~/ngate/` on the remote host (excludes `data/`, `.git/`)
+3. `docker compose up -d --build` rebuilds the image and restarts the container
+
+**Data is safe across deploys** — `data/` lives on the host via Docker volume, not inside the image.
+
+## Data & Backup
+
+All persistent data is stored on the host under `./data/ngate/` (mounted to `/etc/ngate` in the container):
+
+```
+./data/
+├── ngate/
+│   ├── proxy-manager.db     # SQLite — sites, certs, providers config
+│   └── certs/
+│       ├── letsencrypt/     # Let's Encrypt certs (per domain)
+│       └── mkcert/          # mkcert certs (local dev)
+└── acme/                    # ACME challenge files (ephemeral)
+```
+
+Nginx configs (`/etc/nginx/sites-enabled/`) live inside the container and are **not persisted** — they are regenerated from the database on every startup.
+
+**Backup:** copy `./data/ngate/` — that's everything (DB + certs).
+
+```bash
+# Backup
+tar czf ngate-backup-$(date +%Y%m%d).tar.gz ./data/ngate/
+
+# Restore on a new host
+tar xzf ngate-backup-*.tar.gz
+make deploy HOST=new-vps
+```
+
+## Usage Guide
+
+All configuration is done through the Web UI (default `:8090` on host, `:8080` in container).
+
+### 1. Cert Providers
+
+A cert provider defines **how** certificates are issued. Create one before issuing any certificate.
+
+| Type | Use case | Config required |
+|------|----------|-----------------|
+| `mkcert` | Local dev, internal networks | None |
+| `letsencrypt_http01` | Public sites (port 80 must be open) | `email` |
+| `letsencrypt_dns01_cloudflare` | Wildcard certs, Cloudflare DNS | `email`, `api_token` |
+| `letsencrypt_dns01_route53` | Wildcard certs, AWS Route53 | `email`, `access_key_id`, `secret_access_key`, `region` |
+
+Config can be entered as YAML in the UI:
+
+```yaml
+email: admin@example.com
+api_token: cf-api-token-here
+staging: false
+```
+
+### 2. Certificates
+
+A certificate is issued by a provider for a domain (+ optional alt/wildcard domains).
+
+- **Domain:** primary domain (e.g. `example.com`)
+- **Alt Domains (SANs):** comma-separated, e.g. `*.example.com, api.example.com`
+- **Wildcard certs** require a DNS-01 provider (Cloudflare or Route53)
+
+Cert issuance is async — status transitions: `pending` → `issuing` → `active` or `error`. The UI auto-polls until resolved.
+
+To retry a failed cert, click the refresh button on the certificate card.
+
+### 3. Sites
+
+A site maps a domain to a backend (reverse proxy) or filesystem path (static files).
+
+| Field | Description |
+|-------|-------------|
+| **Domain** | The hostname nginx listens for (e.g. `app.example.com`) |
+| **Type** | `reverse_proxy` or `static` |
+| **Proxy Target** | Backend URL, e.g. `http://10.0.0.1:3000` (for reverse proxy) |
+| **Static Root** | Filesystem path, e.g. `/var/www/site` (for static) |
+| **Certificate** | Select an issued certificate (or None for HTTP only) |
+| **Force HTTPS** | Redirect HTTP → HTTPS (requires a certificate) |
+| **Custom Nginx** | Extra directives injected inside the `server {}` block |
+| **Enabled** | Toggle site on/off without deleting |
+
+The default reverse proxy template already includes WebSocket support (`Upgrade` + `Connection` headers), so no custom directives needed for WS.
 
 ## API Endpoints
 
