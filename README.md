@@ -61,7 +61,7 @@ Edit any `.go` or `.html` file and air will auto-rebuild inside the container.
 
 ## Deploy to VPS
 
-`make deploy` builds the binary locally, rsyncs source to the remote host, and rebuilds the Docker container.
+`make deploy` rsyncs source to the remote host and rebuilds the Docker image there (multi-stage build, no local Go toolchain needed).
 
 ```bash
 # Deploy (default host from Makefile: HOST=tonysproxy)
@@ -81,9 +81,8 @@ Host my-vps
 ```
 
 **What happens on deploy:**
-1. `go build` runs locally (fast, avoids network issues in Docker)
-2. `rsync` syncs source to `~/ngate/` on the remote host (excludes `data/`, `.git/`)
-3. `docker compose up -d --build` rebuilds the image and restarts the container
+1. `rsync` syncs source to `~/ngate/` on the remote host (excludes `data/`, `.git/`, `bin/`)
+2. `docker compose up -d --build` runs multi-stage Go build and restarts the container
 
 **Data is safe across deploys** — `data/` lives on the host via Docker volume, not inside the image.
 

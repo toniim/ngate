@@ -35,8 +35,8 @@ test-nginx:
 	sudo nginx -t
 
 # Deploy to remote host: make deploy HOST=tonysproxy
-deploy: build
+deploy:
 	rsync -avz --delete \
-		--exclude='data/' --exclude='.git/' --exclude='.claude/' --exclude='.serena/' --exclude='plans/' \
+		--exclude='data/' --exclude='.git/' --exclude='.claude/' --exclude='.serena/' --exclude='plans/' --exclude='bin/' \
 		./ $(HOST):~/ngate/
 	ssh $(HOST) "cd ~/ngate && docker compose up -d --build"
