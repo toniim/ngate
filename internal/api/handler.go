@@ -28,6 +28,27 @@ func NewHandler(db *db.DB, nginx *nginx.Manager, certs *certmanager.Manager) *Ha
 	return &Handler{db: db, nginx: nginx, certs: certs}
 }
 
+// ReconcileOnStartup regenerates nginx configs for all enabled sites from DB.
+// This ensures sites-enabled/ is populated after container restart.
+func (h *Handler) ReconcileOnStartup() {
+	sites, err := h.db.ListSites()
+	if err != nil {
+		logrus.WithError(err).Error("Reconcile: failed to list sites")
+		return
+	}
+	count := 0
+	for i := range sites {
+		if !sites[i].Enabled {
+			continue
+		}
+		h.applySiteConfig(&sites[i])
+		count++
+	}
+	if count > 0 {
+		logrus.Infof("Reconcile: regenerated nginx configs for %d site(s)", count)
+	}
+}
+
 func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 	// Sites
 	rg.GET("/sites", h.listSites)

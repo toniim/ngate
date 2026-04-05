@@ -50,6 +50,7 @@ func main() {
 
 	certMgr := certmanager.New(*certDir)
 	handler := api.NewHandler(database, nginxMgr, certMgr)
+	handler.ReconcileOnStartup()
 
 	// Router
 	gin.SetMode(gin.ReleaseMode)

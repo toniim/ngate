@@ -1,4 +1,6 @@
-.PHONY: build run docker-build docker-up docker-down dev
+.PHONY: build run docker-build docker-up docker-down dev deploy
+
+HOST ?= tonysproxy
 
 # Build binary
 build:
@@ -33,3 +35,10 @@ docker-logs:
 # Test nginx config
 test-nginx:
 	sudo nginx -t
+
+# Deploy to remote host: make deploy HOST=tonysproxy
+deploy: build
+	rsync -avz --delete \
+		--exclude='data/' --exclude='.git/' --exclude='.claude/' --exclude='.serena/' --exclude='plans/' \
+		./ $(HOST):~/ngate/
+	ssh $(HOST) "cd ~/ngate && docker compose up -d --build"
