@@ -602,11 +602,23 @@ async function deleteProvider(id) {
 }
 
 // --- Certificates ---
+let certPollTimer = null;
+
 async function loadCertificates() {
   try {
     certificates = await apiFetch('/certificates');
     renderCerts();
+    renderSites();
+    pollCertsIfNeeded();
   } catch (e) { toast('Failed to load certificates: ' + e.message, 'error'); }
+}
+
+function pollCertsIfNeeded() {
+  clearTimeout(certPollTimer);
+  const hasTransient = certificates.some(c => c.status === 'pending' || c.status === 'issuing');
+  if (hasTransient) {
+    certPollTimer = setTimeout(loadCertificates, 3000);
+  }
 }
 
 function renderCerts() {
@@ -618,23 +630,31 @@ function renderCerts() {
   el.innerHTML = certificates.map(c => {
     const cls = c.status === 'active' ? '' : c.status === 'error' ? ' error' : ' ' + c.status;
     const providerName = certProviders.find(p => p.id === c.cert_provider_id)?.name || 'Unknown';
+    const statusLabel = c.status === 'issuing' ? 'issuing...' : c.status;
+
+    let errorHtml = '';
+    if (c.error_message) {
+      const short = c.error_message.length > 120 ? c.error_message.slice(0, 120) + '...' : c.error_message;
+      errorHtml = `<div style="margin-top:6px;padding:8px 10px;background:rgba(220,38,38,.06);border-radius:6px;font-size:12px;color:var(--red);line-height:1.4" title="${escAttr(c.error_message)}">⚠ ${escHtml(short)}</div>`;
+    }
+
     return `
       <div class="site-card">
         <div class="site-row">
           <div class="site-info">
             <div class="site-domain">
               ${escHtml(c.domain)}
-              <span class="tag tag-ssl${cls}">${c.status}</span>
+              <span class="tag tag-ssl${cls}">${statusLabel}</span>
               <span class="tag tag-provider">${escHtml(providerName)}</span>
             </div>
             <div class="site-meta">
               ${c.alt_domains ? `<span>SANs: ${escHtml(c.alt_domains)}</span>` : ''}
               ${c.expires_at ? `<span>📅 Expires: ${new Date(c.expires_at).toLocaleDateString()}</span>` : ''}
-              ${c.error_message ? `<span style="color:var(--red)">⚠ ${escHtml(c.error_message)}</span>` : ''}
             </div>
+            ${errorHtml}
           </div>
           <div class="site-actions">
-            <button class="btn btn-sm btn-icon" onclick="renewCert(${c.id})" title="Renew">🔄</button>
+            <button class="btn btn-sm btn-icon" onclick="renewCert(${c.id})" title="Renew / Retry">🔄</button>
             <button class="btn btn-sm btn-icon btn-danger" onclick="deleteCert(${c.id})" title="Delete">🗑</button>
           </div>
         </div>
@@ -676,7 +696,7 @@ async function issueCert(e) {
     await apiFetch('/certificates', { method: 'POST', body: JSON.stringify(payload) });
     toast('Certificate issuance started...');
     closeCertModal();
-    setTimeout(loadCertificates, 2000);
+    loadCertificates();
   } catch (e) { toast(e.message, 'error'); }
 }
 
@@ -684,7 +704,7 @@ async function renewCert(id) {
   try {
     await apiFetch(`/certificates/${id}/renew`, { method: 'POST' });
     toast('Renewal started...');
-    setTimeout(loadCertificates, 2000);
+    loadCertificates();
   } catch (e) { toast(e.message, 'error'); }
 }
 
@@ -741,6 +761,10 @@ function escHtml(str) {
   const d = document.createElement('div');
   d.textContent = str;
   return d.innerHTML;
+}
+
+function escAttr(str) {
+  return str.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 function toast(msg, type = 'success') {
