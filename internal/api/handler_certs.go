@@ -2,7 +2,11 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
@@ -46,7 +50,9 @@ func (h *Handler) getCertProvider(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Provider not found"})
 		return
 	}
-	redactConfig(p)
+	if y, err := configJSONToYAML(p.Config); err == nil {
+		p.Config = y
+	}
 	c.JSON(http.StatusOK, p)
 }
 
@@ -245,13 +251,35 @@ func (h *Handler) issueCertAsync(certID int64, domain string, altDomains []strin
 
 	h.db.UpdateCertificateStatus(certID, models.CertStatusIssuing, "", nil)
 
-	err := h.certs.IssueCert(domain, altDomains, provider.Type, provider.Config)
+	h.certLogs.CreateStream(certID)
+	defer h.certLogs.CloseStream(certID)
+
+	logPath := h.certs.LogPath(certID)
+	os.MkdirAll(filepath.Dir(logPath), 0755)
+	logFile, _ := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if logFile != nil {
+		defer logFile.Close()
+		fmt.Fprintf(logFile, "\n--- %s :: issuance started for %s ---\n",
+			time.Now().Format(time.RFC3339), domain)
+	}
+
+	logFn := func(line string) {
+		logrus.WithField("cert_id", certID).Debug(line)
+		if logFile != nil {
+			fmt.Fprintln(logFile, line)
+		}
+		h.certLogs.Send(certID, line)
+	}
+
+	err := h.certs.IssueCert(domain, altDomains, provider.Type, provider.Config, logFn)
 	if err != nil {
 		log.WithError(err).Error("Certificate issuance failed")
+		logFn("ERROR: " + err.Error())
 		h.db.UpdateCertificateStatus(certID, models.CertStatusError, err.Error(), nil)
 		return
 	}
 
+	logFn("Certificate issued successfully.")
 	expiry, _ := h.certs.GetExpiry(domain, provider.Type)
 	h.db.UpdateCertificateStatus(certID, models.CertStatusActive, "", expiry)
 	log.Info("Certificate issued successfully")
@@ -267,6 +295,22 @@ func redactConfig(p *models.CertProvider) {
 	if p.Config != "" && p.Config != "{}" {
 		p.Config = "[REDACTED]"
 	}
+}
+
+// configJSONToYAML converts a stored JSON config back to YAML for editing.
+func configJSONToYAML(input string) (string, error) {
+	if input == "" || input == "{}" {
+		return "", nil
+	}
+	var data map[string]interface{}
+	if err := json.Unmarshal([]byte(input), &data); err != nil {
+		return "", err
+	}
+	out, err := yaml.Marshal(data)
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
 }
 
 // normalizeConfigToJSON accepts YAML or JSON config string and returns JSON.

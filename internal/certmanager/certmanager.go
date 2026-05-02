@@ -1,9 +1,11 @@
 package certmanager
 
 import (
+	"bufio"
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +17,9 @@ import (
 	"github.com/ngate/internal/models"
 )
 
+// LogFunc is a callback for streaming progress lines during cert issuance.
+type LogFunc func(string)
+
 type Manager struct {
 	certDir string
 }
@@ -25,15 +30,32 @@ func New(certDir string) *Manager {
 
 // IssueCert issues a certificate using the given provider type and config.
 // altDomains are additional SANs (e.g. *.example.com, api.example.com).
-func (m *Manager) IssueCert(domain string, altDomains []string, providerType models.ProviderType, providerConfig string) error {
+// logFn receives progress lines during issuance (nil-safe: no-op if nil).
+func (m *Manager) IssueCert(domain string, altDomains []string, providerType models.ProviderType, providerConfig string, logFn LogFunc) error {
+	log := func(format string, args ...interface{}) {
+		if logFn != nil {
+			logFn(fmt.Sprintf(format, args...))
+		}
+	}
 	switch providerType {
 	case models.ProviderMkcert:
-		return m.issueMkcert(domain, altDomains)
+		return m.issueMkcert(domain, altDomains, log)
 	case models.ProviderLetsEncryptHTTP01, models.ProviderLetsEncryptDNSR53, models.ProviderLetsEncryptDNSCF:
-		return m.issueACME(domain, altDomains, providerType, providerConfig)
+		return m.issueACME(domain, altDomains, providerType, providerConfig, log)
 	default:
 		return fmt.Errorf("unsupported provider type: %s", providerType)
 	}
+}
+
+// LogPath returns the on-disk log file path for a given cert ID.
+// Caller is responsible for creating parent dir before writing.
+func (m *Manager) LogPath(certID int64) string {
+	return filepath.Join(m.certDir, "logs", fmt.Sprintf("cert-%d.log", certID))
+}
+
+// LogDir returns the directory used for cert log files.
+func (m *Manager) LogDir() string {
+	return filepath.Join(m.certDir, "logs")
 }
 
 // CertPaths returns (certPath, keyPath) for the given provider type and domain
@@ -86,21 +108,33 @@ func (m *Manager) GetExpiry(domain string, providerType models.ProviderType) (*t
 	return &cert.NotAfter, nil
 }
 
-func (m *Manager) issueMkcert(domain string, altDomains []string) error {
+func (m *Manager) issueMkcert(domain string, altDomains []string, log func(string, ...interface{})) error {
 	certDir := filepath.Join(m.certDir, "mkcert")
 	os.MkdirAll(certDir, 0755)
 
 	certFile := filepath.Join(certDir, domain+".pem")
 	keyFile := filepath.Join(certDir, domain+"-key.pem")
 
-	// Build args: primary domain + alt domains
 	args := []string{"-cert-file", certFile, "-key-file", keyFile, domain}
 	args = append(args, altDomains...)
 
+	log("Running mkcert for %s...", domain)
 	cmd := exec.Command("mkcert", args...)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("mkcert failed: %s - %w", strings.TrimSpace(string(output)), err)
+
+	stdout, _ := cmd.StdoutPipe()
+	stderr, _ := cmd.StderrPipe()
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("mkcert failed to start: %w", err)
+	}
+
+	// Stream stdout and stderr line-by-line
+	scanner := bufio.NewScanner(io.MultiReader(stdout, stderr))
+	for scanner.Scan() {
+		log("%s", scanner.Text())
+	}
+
+	if err := cmd.Wait(); err != nil {
+		return fmt.Errorf("mkcert failed: %w", err)
 	}
 
 	logrus.WithFields(logrus.Fields{
