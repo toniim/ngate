@@ -4,11 +4,13 @@ Lightweight Nginx proxy gateway with a web UI, written in Go.
 
 ## Features
 
-- **Web UI** — Add/edit/delete sites with domain, proxy target, or static file serving
-- **SSL Management** — Auto-issue via Let's Encrypt (production) or mkcert (local dev)
-- **Nginx Control** — Auto-generates configs, tests, and hot-reloads Nginx
+- **Web UI** — Add/edit/clone/delete sites with domain, proxy target, or static file serving
+- **SSL Management** — Auto-issue via Let's Encrypt (HTTP-01 or DNS-01: Cloudflare/Route53) or mkcert (local dev). Staging and production ACME accounts are isolated automatically.
+- **Cert Issuance Logs** — Live SSE stream during issuance plus persistent on-disk history viewable per certificate at any time (toggleable from the cert card)
+- **Nginx Control** — Auto-generates configs, tests, hot-reloads, and surfaces per-site reload errors in the UI (the offending site is identified from the nginx test output, so a broken site never blames its neighbours)
 - **Force HTTPS** — Optional HTTP→HTTPS redirect per site
 - **Custom Directives** — Inject extra Nginx config per site
+- **YAML Provider Config** — Provider credentials are entered/edited as YAML with syntax highlighting and per-type templates
 - **Single Binary** — UI embedded in the Go binary, no Node.js needed
 
 ## Architecture
@@ -96,7 +98,11 @@ All persistent data is stored on the host under `./data/ngate/` (mounted to `/et
 │   ├── proxy-manager.db     # SQLite — sites, certs, providers config
 │   └── certs/
 │       ├── letsencrypt/     # Let's Encrypt certs (per domain)
-│       └── mkcert/          # mkcert certs (local dev)
+│       ├── mkcert/          # mkcert certs (local dev)
+│       ├── accounts/        # ACME account keys per CA env
+│       │   ├── staging/<email>/
+│       │   └── production/<email>/
+│       └── logs/            # Per-cert issuance logs (cert-<id>.log)
 └── acme/                    # ACME challenge files (ephemeral)
 ```
 
@@ -146,7 +152,9 @@ A certificate is issued by a provider for a domain (+ optional alt/wildcard doma
 
 Cert issuance is async — status transitions: `pending` → `issuing` → `active` or `error`. The UI auto-polls until resolved.
 
-To retry a failed cert, click the refresh button on the certificate card.
+To retry a failed cert, click the refresh button on the certificate card. Click 📋 on a card to view the full issuance log (live during issuance, persisted history afterwards — useful for debugging an `error` cert).
+
+Issuance logs are persisted to `<certs>/logs/cert-<id>.log` and replayed on every SSE subscribe, so previous attempts remain inspectable across restarts.
 
 ### 3. Sites
 
@@ -164,6 +172,10 @@ A site maps a domain to a backend (reverse proxy) or filesystem path (static fil
 | **Enabled** | Toggle site on/off without deleting |
 
 The default reverse proxy template already includes WebSocket support (`Upgrade` + `Connection` headers), so no custom directives needed for WS.
+
+**Clone** — Use the 📄 button on a site card to copy all its settings into the create-site modal with an auto-suggested unique domain (`<host>-copy[N].<tld>`).
+
+**Nginx errors** — When `nginx -t` or reload fails, the responsible site card turns red and shows the full nginx output. The error is parsed from the test output so it pins to the offending site only — editing healthy sites won't surface another site's failure. The error clears automatically on the next successful reload.
 
 ## API Endpoints
 
@@ -187,6 +199,7 @@ No auth. CORS allows all origins. Base path: `/api`.
 | `GET` | `/api/certificates/:id` | Get certificate |
 | `DELETE` | `/api/certificates/:id` | Delete certificate |
 | `POST` | `/api/certificates/:id/renew` | Renew certificate |
+| `GET` | `/api/certificates/:id/logs` | SSE stream of issuance log lines (replays history then streams live) |
 | `GET` | `/api/nginx/status` | Nginx config status |
 | `POST` | `/api/nginx/reload` | Reload nginx |
 | `GET` | `/api/mkcert/caroot` | mkcert CA root + trust commands |
@@ -198,6 +211,7 @@ Drive ngate purely via REST. Set `BASE` to the admin URL (local: `http://localho
 
 **Site fields** (`internal/models/models.go`):
 `domain`, `proxy_type` (`reverse_proxy`|`static`), `proxy_target`, `static_root`, `certificate_id` (int, optional), `force_https` (bool), `enabled` (bool), `custom_nginx` (string).
+Read-only: `nginx_error` — last `nginx -t`/reload error attributed to this site (empty when healthy).
 
 **Provider types**: `mkcert`, `letsencrypt_http01`, `letsencrypt_dns01_cloudflare`, `letsencrypt_dns01_route53`. `config` is a YAML string (see "Cert Providers" table above for required keys).
 
