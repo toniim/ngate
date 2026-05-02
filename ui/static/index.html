@@ -75,6 +75,7 @@ a:hover{color:var(--accent2)}
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:100;opacity:0;pointer-events:none;transition:opacity .3s ease}
 .modal-overlay.active{opacity:1;pointer-events:all}
 .modal{background:var(--surface);border:1px solid var(--border);border-radius:14px;width:560px;max-width:95vw;max-height:90vh;overflow-y:auto;padding:28px}
+#provider-overlay .modal{width:760px}
 .modal h2{font-size:18px;margin-bottom:20px;font-weight:700}
 
 /* Form */
@@ -116,6 +117,11 @@ a:hover{color:var(--accent2)}
 /* Trust Modal */
 .trust-info{background:var(--surface2);border-radius:8px;padding:16px;margin:12px 0;font-family:'JetBrains Mono',monospace;font-size:14px;line-height:1.8;overflow-x:auto}
 .trust-info .os-label{color:var(--accent);font-weight:600}
+
+/* Log viewer */
+.log-viewer{background:#0f172a;color:#a7f3d0;border-radius:8px;padding:10px 14px;margin-top:12px;font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.6;max-height:200px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;border:1px solid #334155}
+.log-viewer:empty::after{content:'Waiting for output...';color:#64748b;font-style:italic}
+.log-line.dim{opacity:.45}
 </style>
 </head>
 <body>
@@ -406,6 +412,12 @@ function renderSites() {
     const target = s.proxy_type === 'static' ? s.static_root : s.proxy_target;
     const proto = s.certificate_id ? 'https' : 'http';
 
+    let nginxErrHtml = '';
+    if (s.nginx_error) {
+      const short = s.nginx_error.length > 160 ? s.nginx_error.slice(0, 160) + '...' : s.nginx_error;
+      nginxErrHtml = `<div style="margin-top:6px;padding:8px 10px;background:rgba(220,38,38,.06);border-radius:6px;font-size:12px;color:var(--red);line-height:1.4;white-space:pre-wrap" title="${escAttr(s.nginx_error)}">⚠ nginx: ${escHtml(short)}</div>`;
+    }
+
     return `
       <div class="site-card ${s.enabled ? '' : 'disabled'}">
         <div class="site-row">
@@ -413,17 +425,20 @@ function renderSites() {
             <div class="site-domain">
               <a href="${proto}://${s.domain}" target="_blank">${escHtml(s.domain)}</a>
               ${typeTag} ${sslTag}
+              ${s.nginx_error ? '<span class="tag tag-ssl error">nginx error</span>' : ''}
             </div>
             <div class="site-meta">
               <span>→ ${escHtml(target || 'N/A')}</span>
               ${s.force_https ? '<span>🔒 Force HTTPS</span>' : ''}
             </div>
+            ${nginxErrHtml}
           </div>
           <div class="site-actions">
             <button class="btn btn-sm btn-icon" onclick="toggleSite(${s.id})" title="${s.enabled ? 'Disable' : 'Enable'}">
               ${s.enabled ? '⏸' : '▶️'}
             </button>
             <button class="btn btn-sm btn-icon" onclick="editSite(${s.id})" title="Edit">✏️</button>
+            <button class="btn btn-sm btn-icon" onclick="cloneSite(${s.id})" title="Clone">📄</button>
             <button class="btn btn-sm btn-icon btn-danger" onclick="deleteSite(${s.id})" title="Delete">🗑</button>
           </div>
         </div>
@@ -433,8 +448,11 @@ function renderSites() {
 }
 
 function openSiteModal(site = null) {
-  editingSiteId = site ? site.id : null;
-  document.getElementById('site-modal-title').textContent = site ? 'Edit Site' : 'Add New Site';
+  editingSiteId = site && site.id ? site.id : null;
+  const isEdit = !!editingSiteId;
+  const isClone = site && !site.id;
+  document.getElementById('site-modal-title').textContent =
+    isEdit ? 'Edit Site' : isClone ? 'Clone Site' : 'Add New Site';
   document.getElementById('f-id').value = site?.id || '';
   document.getElementById('f-domain').value = site?.domain || '';
   document.getElementById('f-proxy-type').value = site?.proxy_type || 'reverse_proxy';
@@ -483,12 +501,16 @@ async function saveSite(e) {
     custom_nginx: document.getElementById('f-custom-nginx').value,
   };
   try {
+    let result;
     if (editingSiteId) {
-      await apiFetch(`/sites/${editingSiteId}`, { method: 'PUT', body: JSON.stringify(payload) });
-      toast('Site updated');
+      result = await apiFetch(`/sites/${editingSiteId}`, { method: 'PUT', body: JSON.stringify(payload) });
     } else {
-      await apiFetch('/sites', { method: 'POST', body: JSON.stringify(payload) });
-      toast('Site created');
+      result = await apiFetch('/sites', { method: 'POST', body: JSON.stringify(payload) });
+    }
+    if (result && result.nginx_error) {
+      toast('Saved, but nginx reload failed: ' + result.nginx_error, 'error');
+    } else {
+      toast(editingSiteId ? 'Site updated' : 'Site created');
     }
     closeSiteModal();
     loadSites();
@@ -498,6 +520,29 @@ async function saveSite(e) {
 function editSite(id) {
   const site = sites.find(s => s.id === id);
   if (site) openSiteModal(site);
+}
+
+function cloneSite(id) {
+  const src = sites.find(s => s.id === id);
+  if (!src) return;
+  // Strip identity fields so the modal opens as "Add New Site" with the
+  // source's settings prefilled. Suggest a unique domain to avoid the UNIQUE
+  // constraint on save.
+  const copy = { ...src, id: undefined, domain: suggestCloneDomain(src.domain), nginx_error: '' };
+  openSiteModal(copy);
+}
+
+function suggestCloneDomain(domain) {
+  if (!domain) return '';
+  const taken = new Set(sites.map(s => s.domain));
+  const dot = domain.indexOf('.');
+  const head = dot === -1 ? domain : domain.slice(0, dot);
+  const tail = dot === -1 ? '' : domain.slice(dot);
+  for (let i = 1; i < 100; i++) {
+    const candidate = `${head}-copy${i === 1 ? '' : i}${tail}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+  return '';
 }
 
 async function deleteSite(id) {
@@ -592,7 +637,7 @@ function openProviderModal(provider = null) {
   document.getElementById('fp-name').value = provider?.name || '';
   const type = provider?.type || 'mkcert';
   document.getElementById('fp-type').value = type;
-  document.getElementById('fp-config').value = provider ? '' : (configTemplates[type] || '');
+  document.getElementById('fp-config').value = provider ? (provider.config || '') : (configTemplates[type] || '');
   toggleProviderConfig();
   highlightYaml();
   document.getElementById('provider-overlay').classList.add('active');
@@ -625,9 +670,11 @@ async function saveProvider(e) {
   } catch (e) { toast(e.message, 'error'); }
 }
 
-function editProvider(id) {
-  const p = certProviders.find(x => x.id === id);
-  if (p) openProviderModal(p);
+async function editProvider(id) {
+  try {
+    const p = await apiFetch(`/cert-providers/${id}`);
+    openProviderModal(p);
+  } catch (e) { toast(e.message, 'error'); }
 }
 
 async function deleteProvider(id) {
@@ -641,6 +688,59 @@ async function deleteProvider(id) {
 
 // --- Certificates ---
 let certPollTimer = null;
+let activeLogSources = {};
+let certLogLines = {};
+let expandedLogs = new Set();
+
+function streamCertLogs(certId) {
+  if (activeLogSources[certId]) return;
+  if (!certLogLines[certId]) certLogLines[certId] = [];
+
+  const es = new EventSource(`${API}/certificates/${certId}/logs`);
+  activeLogSources[certId] = es;
+
+  es.onmessage = (e) => {
+    certLogLines[certId].push(e.data);
+    const el = document.querySelector(`.log-viewer[data-cert-id="${certId}"]`);
+    if (el) {
+      el.textContent += e.data + '\n';
+      el.scrollTop = el.scrollHeight;
+    }
+  };
+
+  es.addEventListener('done', () => {
+    es.close();
+    delete activeLogSources[certId];
+    const cert = certificates.find(x => x.id === certId);
+    if (cert && cert.status === 'issuing') {
+      delete certLogLines[certId];
+      loadCertificates();
+    }
+  });
+
+  es.onerror = () => {
+    es.close();
+    delete activeLogSources[certId];
+    const cert = certificates.find(x => x.id === certId);
+    if (cert && cert.status === 'issuing') {
+      setTimeout(() => loadCertificates(), 1000);
+    }
+  };
+}
+
+function toggleCertLogs(certId) {
+  if (expandedLogs.has(certId)) {
+    expandedLogs.delete(certId);
+    if (activeLogSources[certId]) {
+      activeLogSources[certId].close();
+      delete activeLogSources[certId];
+    }
+    delete certLogLines[certId];
+  } else {
+    expandedLogs.add(certId);
+  }
+  renderCerts();
+}
 
 async function loadCertificates() {
   try {
@@ -676,6 +776,12 @@ function renderCerts() {
       errorHtml = `<div style="margin-top:6px;padding:8px 10px;background:rgba(220,38,38,.06);border-radius:6px;font-size:12px;color:var(--red);line-height:1.4" title="${escAttr(c.error_message)}">⚠ ${escHtml(short)}</div>`;
     }
 
+    const stored = certLogLines[c.id] || [];
+    const showLogs = c.status === 'issuing' || expandedLogs.has(c.id);
+    const logHtml = showLogs
+      ? `<div class="log-viewer" data-cert-id="${c.id}">${stored.length ? escHtml(stored.join('\n')) + '\n' : ''}</div>`
+      : '';
+
     return `
       <div class="site-card">
         <div class="site-row">
@@ -692,13 +798,20 @@ function renderCerts() {
             ${errorHtml}
           </div>
           <div class="site-actions">
+            <button class="btn btn-sm btn-icon" onclick="toggleCertLogs(${c.id})" title="${expandedLogs.has(c.id) ? 'Hide' : 'Show'} logs">📋</button>
             <button class="btn btn-sm btn-icon" onclick="renewCert(${c.id})" title="Renew / Retry">🔄</button>
             <button class="btn btn-sm btn-icon btn-danger" onclick="deleteCert(${c.id})" title="Delete">🗑</button>
           </div>
         </div>
+        ${logHtml}
       </div>
     `;
   }).join('');
+
+  // Connect SSE for any issuing certs and any user-expanded log panels.
+  certificates.forEach(c => {
+    if (c.status === 'issuing' || expandedLogs.has(c.id)) streamCertLogs(c.id);
+  });
 }
 
 function openCertModal() {
@@ -731,9 +844,10 @@ async function issueCert(e) {
   };
   if (!payload.cert_provider_id) { toast('Select a provider first', 'error'); return; }
   try {
-    await apiFetch('/certificates', { method: 'POST', body: JSON.stringify(payload) });
+    const result = await apiFetch('/certificates', { method: 'POST', body: JSON.stringify(payload) });
     toast('Certificate issuance started...');
     closeCertModal();
+    streamCertLogs(result.id);
     loadCertificates();
   } catch (e) { toast(e.message, 'error'); }
 }
@@ -742,6 +856,7 @@ async function renewCert(id) {
   try {
     await apiFetch(`/certificates/${id}/renew`, { method: 'POST' });
     toast('Renewal started...');
+    streamCertLogs(id);
     loadCertificates();
   } catch (e) { toast(e.message, 'error'); }
 }
