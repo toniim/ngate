@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/sirupsen/logrus"
 
@@ -46,7 +47,7 @@ type acmeConfig struct {
 	Staging bool   `json:"staging"`
 }
 
-func (m *Manager) issueACME(domain string, altDomains []string, providerType models.ProviderType, configJSON string) error {
+func (m *Manager) issueACME(domain string, altDomains []string, providerType models.ProviderType, configJSON string, log func(string, ...interface{})) error {
 	var cfg acmeConfig
 	if err := json.Unmarshal([]byte(configJSON), &cfg); err != nil {
 		return fmt.Errorf("parse provider config: %w", err)
@@ -55,7 +56,12 @@ func (m *Manager) issueACME(domain string, altDomains []string, providerType mod
 		cfg.Email = "admin@" + domain
 	}
 
-	user, err := m.loadOrCreateAccount(cfg.Email)
+	caLabel := "production"
+	if cfg.Staging {
+		caLabel = "staging"
+	}
+	log("Loading ACME account for %s (%s)...", cfg.Email, caLabel)
+	user, err := m.loadOrCreateAccount(cfg.Email, caLabel)
 	if err != nil {
 		return fmt.Errorf("acme account: %w", err)
 	}
@@ -75,22 +81,25 @@ func (m *Manager) issueACME(domain string, altDomains []string, providerType mod
 
 	// Register account if needed
 	if user.Registration == nil {
+		log("Registering new account with Let's Encrypt (%s)...", caLabel)
 		reg, err := client.Registration.Register(registration.RegisterOptions{TermsOfServiceAgreed: true})
 		if err != nil {
 			return fmt.Errorf("acme register: %w", err)
 		}
 		user.Registration = reg
-		m.saveAccount(user)
+		m.saveAccount(user, caLabel)
 	}
 
 	// Set up challenge provider
 	if providerType == models.ProviderLetsEncryptHTTP01 {
+		log("Setting up HTTP-01 challenge provider (webroot: %s)...", webrootPath)
 		provider, err := webroot.NewHTTPProvider(webrootPath)
 		if err != nil {
 			return fmt.Errorf("webroot provider: %w", err)
 		}
 		client.Challenge.SetHTTP01Provider(provider)
 	} else {
+		log("Setting up DNS-01 challenge provider...")
 		dnsProvider, err := buildDNSProvider(providerType, configJSON)
 		if err != nil {
 			return fmt.Errorf("dns provider: %w", err)
@@ -100,6 +109,7 @@ func (m *Manager) issueACME(domain string, altDomains []string, providerType mod
 
 	// Obtain certificate with all domains (primary + SANs)
 	allDomains := append([]string{domain}, altDomains...)
+	log("Requesting certificate from Let's Encrypt for: %s...", strings.Join(allDomains, ", "))
 	request := certificate.ObtainRequest{
 		Domains: allDomains,
 		Bundle:  true,
@@ -113,6 +123,7 @@ func (m *Manager) issueACME(domain string, altDomains []string, providerType mod
 	certDir := filepath.Join(m.certDir, "letsencrypt", domain)
 	os.MkdirAll(certDir, 0755)
 
+	log("Writing certificate files to %s...", certDir)
 	if err := os.WriteFile(filepath.Join(certDir, "fullchain.pem"), certificates.Certificate, 0644); err != nil {
 		return fmt.Errorf("write cert: %w", err)
 	}
@@ -129,8 +140,8 @@ func (m *Manager) issueACME(domain string, altDomains []string, providerType mod
 }
 
 // loadOrCreateAccount loads or creates an ACME account for the given email
-func (m *Manager) loadOrCreateAccount(email string) (*acmeUser, error) {
-	accountDir := filepath.Join(m.certDir, "accounts", email)
+func (m *Manager) loadOrCreateAccount(email, caLabel string) (*acmeUser, error) {
+	accountDir := filepath.Join(m.certDir, "accounts", caLabel, email)
 	keyPath := filepath.Join(accountDir, "account-key.pem")
 	regPath := filepath.Join(accountDir, "registration.json")
 
@@ -172,8 +183,8 @@ func (m *Manager) loadOrCreateAccount(email string) (*acmeUser, error) {
 	return user, nil
 }
 
-func (m *Manager) saveAccount(user *acmeUser) {
-	accountDir := filepath.Join(m.certDir, "accounts", user.Email)
+func (m *Manager) saveAccount(user *acmeUser, caLabel string) {
+	accountDir := filepath.Join(m.certDir, "accounts", caLabel, user.Email)
 	regPath := filepath.Join(accountDir, "registration.json")
 	data, _ := json.Marshal(user)
 	os.WriteFile(regPath, data, 0600)
