@@ -73,6 +73,7 @@ func (db *DB) migrate() error {
 
 	// Column migrations (ignore errors if already exists)
 	db.conn.Exec(`ALTER TABLE certificates ADD COLUMN alt_domains TEXT DEFAULT ''`)
+	db.conn.Exec(`ALTER TABLE sites ADD COLUMN nginx_error TEXT DEFAULT ''`)
 
 	return nil
 }
@@ -81,7 +82,7 @@ func (db *DB) ListSites() ([]models.Site, error) {
 	rows, err := db.conn.Query(`
 		SELECT id, domain, proxy_type, proxy_target, static_root,
 		       certificate_id, force_https, enabled, custom_nginx,
-		       created_at, updated_at
+		       COALESCE(nginx_error, ''), created_at, updated_at
 		FROM sites ORDER BY domain
 	`)
 	if err != nil {
@@ -104,7 +105,7 @@ func (db *DB) GetSite(id int64) (*models.Site, error) {
 	row := db.conn.QueryRow(`
 		SELECT id, domain, proxy_type, proxy_target, static_root,
 		       certificate_id, force_https, enabled, custom_nginx,
-		       created_at, updated_at
+		       COALESCE(nginx_error, ''), created_at, updated_at
 		FROM sites WHERE id = ?
 	`, id)
 	s, err := scanSiteRow(row)
@@ -154,6 +155,23 @@ func (db *DB) DeleteSite(id int64) error {
 	return err
 }
 
+func (db *DB) SetSiteNginxError(id int64, msg string) error {
+	_, err := db.conn.Exec(`UPDATE sites SET nginx_error=?, updated_at=? WHERE id=?`,
+		msg, time.Now(), id)
+	return err
+}
+
+func (db *DB) SetSiteNginxErrorByDomain(domain, msg string) error {
+	_, err := db.conn.Exec(`UPDATE sites SET nginx_error=?, updated_at=? WHERE domain=?`,
+		msg, time.Now(), domain)
+	return err
+}
+
+func (db *DB) ClearAllSiteNginxErrors() error {
+	_, err := db.conn.Exec(`UPDATE sites SET nginx_error='' WHERE nginx_error != ''`)
+	return err
+}
+
 // scanSite scans a site row from rows.Scan
 func scanSite(rows *sql.Rows) (models.Site, error) {
 	var s models.Site
@@ -162,7 +180,7 @@ func scanSite(rows *sql.Rows) (models.Site, error) {
 	err := rows.Scan(
 		&s.ID, &s.Domain, &s.ProxyType, &s.ProxyTarget, &s.StaticRoot,
 		&certID, &forceHTTPS, &enabled, &s.CustomNginx,
-		&s.CreatedAt, &s.UpdatedAt,
+		&s.NginxError, &s.CreatedAt, &s.UpdatedAt,
 	)
 	if err != nil {
 		return s, err
@@ -182,7 +200,7 @@ func scanSiteRow(row *sql.Row) (models.Site, error) {
 	err := row.Scan(
 		&s.ID, &s.Domain, &s.ProxyType, &s.ProxyTarget, &s.StaticRoot,
 		&certID, &forceHTTPS, &enabled, &s.CustomNginx,
-		&s.CreatedAt, &s.UpdatedAt,
+		&s.NginxError, &s.CreatedAt, &s.UpdatedAt,
 	)
 	if err != nil {
 		return s, err

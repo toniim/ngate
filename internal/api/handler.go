@@ -19,13 +19,19 @@ import (
 var domainRe = regexp.MustCompile(`^(\*\.)?([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.)*[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$`)
 
 type Handler struct {
-	db    *db.DB
-	nginx *nginx.Manager
-	certs *certmanager.Manager
+	db       *db.DB
+	nginx    *nginx.Manager
+	certs    *certmanager.Manager
+	certLogs *CertLogBroker
 }
 
 func NewHandler(db *db.DB, nginx *nginx.Manager, certs *certmanager.Manager) *Handler {
-	return &Handler{db: db, nginx: nginx, certs: certs}
+	return &Handler{
+		db:       db,
+		nginx:    nginx,
+		certs:    certs,
+		certLogs: NewCertLogBroker(),
+	}
 }
 
 // ReconcileOnStartup regenerates nginx configs for all enabled sites from DB.
@@ -71,6 +77,7 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.GET("/certificates/:id", h.getCertificate)
 	rg.DELETE("/certificates/:id", h.deleteCertificate)
 	rg.POST("/certificates/:id/renew", h.renewCertificate)
+	rg.GET("/certificates/:id/logs", h.serveCertLogs)
 
 	// Nginx
 	rg.GET("/nginx/status", h.nginxStatus)
@@ -268,7 +275,7 @@ func (h *Handler) mkcertDownloadCA(c *gin.Context) {
 
 // --- Internal ---
 
-func (h *Handler) applySiteConfig(site *models.Site) {
+func (h *Handler) applySiteConfig(site *models.Site) error {
 	cfg := &nginx.SiteConfig{
 		Domain:      site.Domain,
 		ProxyType:   site.ProxyType,
@@ -296,13 +303,61 @@ func (h *Handler) applySiteConfig(site *models.Site) {
 			"domain": site.Domain,
 			"error":  err,
 		}).Error("Failed to generate nginx config")
-		return
+		h.recordNginxError(site, err)
+		return err
 	}
 	if err := h.nginx.Reload(); err != nil {
 		logrus.WithFields(logrus.Fields{
 			"domain": site.Domain,
 			"error":  err,
 		}).Error("Failed to reload nginx")
+		h.recordNginxError(site, err)
+		return err
+	}
+	h.recordNginxError(site, nil)
+	return nil
+}
+
+// nginxErrConfRe extracts the offending site's conf filename from an
+// `nginx -t` error. Example match group: "test-stg.fasp.me" from
+// "...sites-enabled/test-stg.fasp.me.conf:25".
+var nginxErrConfRe = regexp.MustCompile(`sites-enabled/([^/\s]+)\.conf`)
+
+func (h *Handler) recordNginxError(site *models.Site, err error) {
+	if err == nil {
+		// Reload succeeded → every site's config is good now. Clear all stale
+		// errors so we don't keep showing red banners for fixed sites.
+		if site.NginxError != "" {
+			site.NginxError = ""
+		}
+		h.db.ClearAllSiteNginxErrors()
+		return
+	}
+	msg := err.Error()
+
+	// If we can pinpoint which conf file the failure references, stamp the
+	// error only on that site — not on whichever site happened to trigger
+	// the reload.
+	if m := nginxErrConfRe.FindStringSubmatch(msg); len(m) == 2 {
+		offending := m[1]
+		h.db.SetSiteNginxErrorByDomain(offending, msg)
+		if offending != site.Domain {
+			// This site's own config was fine; the global reload failed
+			// because of another broken site. Don't blame this one.
+			if site.NginxError != "" {
+				site.NginxError = ""
+				h.db.SetSiteNginxError(site.ID, "")
+			}
+			return
+		}
+		site.NginxError = msg
+		return
+	}
+
+	// Couldn't parse a specific conf — fall back to stamping the current site.
+	if site.NginxError != msg {
+		site.NginxError = msg
+		h.db.SetSiteNginxError(site.ID, msg)
 	}
 }
 
