@@ -39,8 +39,8 @@ Lightweight Nginx proxy gateway with a web UI, written in Go.
 
 ```bash
 # Clone & run
-git clone <repo>
-cd nginx-ngate
+git clone https://github.com/toniim/ngate.git
+cd ngate
 
 # Build & start
 docker compose up -d
@@ -323,7 +323,7 @@ Settings → Privacy & Security → View Certificates → Authorities → Import
 ## Directory Structure
 
 ```
-nginx-ngate/
+ngate/
 ├── main.go                  # Entry point (embeds UI)
 ├── internal/
 │   ├── api/handler.go       # REST API handlers
