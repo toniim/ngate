@@ -341,4 +341,4 @@ nginx-ngate/
 
 ## License
 
-MIT
+[MIT](LICENSE)
